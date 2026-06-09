@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ブラウザで動くリアルタイム音声文字起こしアプリ。">
+  <title>VoiceScribe — 音声文字起こし</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1 class="app-title">🎙️ VoiceScribe</h1>
+      <p class="app-subtitle">音声をリアルタイムでテキストに変換</p>
+    </header>
+
+    <div id="error-banner" class="error-banner">
+      お使いのブラウザはWeb Speech APIに対応していません。Chrome または Edge をご利用ください。
+    </div>
+
+    <!-- Mode Tabs -->
+    <div class="mode-tabs">
+      <button id="tab-mic" class="mode-tab active" data-mode="mic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" fill="currentColor"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        マイク入力
+      </button>
+      <button id="tab-file" class="mode-tab" data-mode="file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        ファイル読込
+      </button>
+    </div>
+
+    <!-- Mic Mode -->
+    <section class="glass-card controls-section" id="mic-panel">
+      <div class="language-selector">
+        <label for="language-select">言語</label>
+        <select id="language-select" class="language-select">
+          <option value="ja-JP">🇯🇵 日本語</option>
+          <option value="en-US">🇺🇸 English</option>
+          <option value="zh-CN">🇨🇳 中文</option>
+          <option value="ko-KR">🇰🇷 한국어</option>
+        </select>
+      </div>
+
+      <div class="record-btn-wrapper">
+        <button id="record-btn" class="record-btn" aria-label="録音開始">
+          <svg class="mic-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <div class="stop-icon"></div>
+        </button>
+      </div>
+
+      <div class="status-area">
+        <span id="status-text" class="status-text">マイクボタンを押して開始</span>
+        <span id="timer" class="timer">00:00</span>
+      </div>
+
+      <div id="waveform" class="waveform">
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+      </div>
+    </section>
+
+    <!-- File Mode -->
+    <section class="glass-card file-section" id="file-panel" style="display:none;">
+      <!-- API Key -->
+      <div class="api-key-section">
+        <label for="api-key-input" class="api-key-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          Groq API Key
+        </label>
+        <div class="api-key-row">
+          <input type="password" id="api-key-input" class="api-key-input" placeholder="gsk_..." autocomplete="off">
+          <button id="toggle-key-btn" class="action-btn" title="表示切替">👁️</button>
+        </div>
+        <p class="api-key-hint">キーはブラウザのローカルストレージに保存されます · <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent-primary)">Groqでキーを取得</a></p>
+      </div>
+
+      <!-- File Upload -->
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-zone-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <p class="drop-zone-text">ファイルをドラッグ＆ドロップ</p>
+        <p class="drop-zone-hint">または クリックして選択</p>
+        <p class="drop-zone-formats">mp3, mp4, m4a, wav, webm, mpeg, mpga</p>
+        <input type="file" id="file-input" accept="audio/*,video/*,.mp3,.mp4,.m4a,.wav,.webm,.mpeg,.mpga" hidden>
+      </div>
+
+      <!-- Selected File Info -->
+      <div id="file-info" class="file-info" style="display:none;">
+        <div class="file-info-details">
+          <span id="file-name" class="file-name"></span>
+          <span id="file-size" class="file-size"></span>
+        </div>
+        <button id="remove-file-btn" class="action-btn danger" title="ファイルを削除">✕</button>
+      </div>
+
+      <!-- Language for Whisper -->
+      <div class="language-selector">
+        <label for="whisper-lang-select">言語</label>
+        <select id="whisper-lang-select" class="language-select">
+          <option value="ja">🇯🇵 日本語</option>
+          <option value="en">🇺🇸 English</option>
+          <option value="zh">🇨🇳 中文</option>
+          <option value="ko">🇰🇷 한국어</option>
+        </select>
+      </div>
+
+      <!-- Transcribe Button -->
+      <button id="transcribe-btn" class="transcribe-btn" disabled>
+        <span class="transcribe-btn-text">文字起こし開始</span>
+        <div class="transcribe-spinner" style="display:none;"></div>
+      </button>
+
+      <!-- Progress -->
+      <div id="upload-progress" class="upload-progress" style="display:none;">
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <span id="progress-text" class="progress-text">処理中...</span>
+      </div>
+    </section>
+
+    <!-- Transcript -->
+    <section class="glass-card transcript-section">
+      <div class="transcript-header">
+        <span class="transcript-label">文字起こし結果</span>
+        <span id="word-count" class="word-count">0 文字</span>
+      </div>
+
+      <textarea id="transcript-area" class="transcript-area" placeholder="ここに文字起こし結果が表示されます..." spellcheck="false"></textarea>
+
+      <div class="action-buttons">
+        <button id="copy-btn" class="action-btn" title="コピー">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          コピー
+        </button>
+        <button id="download-btn" class="action-btn" title="ダウンロード">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          ダウンロード
+        </button>
+        <button id="clear-btn" class="action-btn danger" title="クリア">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          クリア
+        </button>
+      </div>
+    </section>
+
+    <footer class="app-footer">
+      <p>Web Speech API + Groq Whisper · Chrome / Edge 推奨</p>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
