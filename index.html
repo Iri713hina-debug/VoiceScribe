@@ -90,19 +90,31 @@
         <div class="drop-zone-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </div>
-        <p class="drop-zone-text">ファイルをドラッグ＆ドロップ</p>
+        <p class="drop-zone-text">音声・動画ファイルをドラッグ＆ドロップ</p>
         <p class="drop-zone-hint">または クリックして選択</p>
-        <p class="drop-zone-formats">mp3, mp4, m4a, wav, webm, mpeg, mpga</p>
-        <input type="file" id="file-input" accept="audio/*,video/*,.mp3,.mp4,.m4a,.wav,.webm,.mpeg,.mpga" hidden>
+        <p class="drop-zone-formats">mp3, mp4, mov, m4a, wav, webm, mpeg, mkv (動画は自動で音声抽出・圧縮)</p>
+        <input type="file" id="file-input" accept="audio/*,video/*,.mp3,.mp4,.mov,.m4a,.wav,.webm,.mpeg,.mpga,.mkv" hidden>
       </div>
 
       <!-- Selected File Info -->
       <div id="file-info" class="file-info" style="display:none;">
         <div class="file-info-details">
-          <span id="file-name" class="file-name"></span>
+          <div class="file-name-row">
+            <span id="file-name" class="file-name"></span>
+            <span id="file-badge" class="file-badge" style="display:none;">動画・自動圧縮</span>
+          </div>
           <span id="file-size" class="file-size"></span>
+          <span id="file-action-hint" class="file-action-hint" style="display:none;">💡 動画から音声を抽出・軽量化（64kbps MP3）して送信します</span>
         </div>
         <button id="remove-file-btn" class="action-btn danger" title="ファイルを削除">✕</button>
+      </div>
+
+      <!-- Download Compressed Audio Option (Shown after extraction/compression) -->
+      <div id="compressed-audio-row" class="compressed-audio-row" style="display:none;">
+        <span id="compressed-info" class="compressed-info"></span>
+        <button id="download-audio-btn" class="action-btn small-btn" type="button" title="圧縮後のMP3を保存">
+          📥 抽出したMP3を保存
+        </button>
       </div>
 
       <!-- Language for Whisper -->
@@ -162,6 +174,7 @@
   </div>
 
   <div id="toast" class="toast"></div>
+  <script src="lame.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

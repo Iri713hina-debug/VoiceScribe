@@ -33,7 +33,12 @@
   const fileInfo = document.getElementById('file-info');
   const fileName = document.getElementById('file-name');
   const fileSize = document.getElementById('file-size');
+  const fileBadge = document.getElementById('file-badge');
+  const fileActionHint = document.getElementById('file-action-hint');
   const removeFileBtn = document.getElementById('remove-file-btn');
+  const compressedAudioRow = document.getElementById('compressed-audio-row');
+  const compressedInfo = document.getElementById('compressed-info');
+  const downloadAudioBtn = document.getElementById('download-audio-btn');
   const whisperLangSelect = document.getElementById('whisper-lang-select');
   const transcribeBtn = document.getElementById('transcribe-btn');
   const uploadProgress = document.getElementById('upload-progress');
@@ -48,6 +53,8 @@
   let startTime = null;
   let selectedFile = null;
   let isTranscribing = false;
+  let lastCompressedBlob = null;
+  let lastCompressedFileName = '';
 
   // --- Load saved API key ---
   const savedKey = localStorage.getItem('voicescribe_groq_key');
@@ -123,6 +130,20 @@
     }
   });
 
+  // Download compressed audio button
+  downloadAudioBtn.addEventListener('click', function () {
+    if (!lastCompressedBlob) return;
+    const url = URL.createObjectURL(lastCompressedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = lastCompressedFileName || 'extracted_audio.mp3';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('📥 抽出したMP3を保存しました');
+  });
+
   // Remove file
   removeFileBtn.addEventListener('click', function () {
     clearSelectedFile();
@@ -130,7 +151,7 @@
 
   function setSelectedFile(file) {
     // Validate file type
-    const allowed = ['audio/', 'video/', '.mp3', '.mp4', '.m4a', '.wav', '.webm', '.mpeg', '.mpga'];
+    const allowed = ['audio/', 'video/', '.mp3', '.mp4', '.mov', '.m4a', '.wav', '.webm', '.mpeg', '.mpga', '.mkv', '.ogg', '.flac', '.aac'];
     const isValid = allowed.some(function (t) {
       return t.startsWith('.') ? file.name.toLowerCase().endsWith(t) : file.type.startsWith(t);
     });
@@ -138,14 +159,38 @@
       showToast('⚠️ サポートされていないファイル形式です');
       return;
     }
-    // Check size (25MB limit for Whisper API)
-    if (file.size > 25 * 1024 * 1024) {
-      showToast('⚠️ ファイルサイズが25MBを超えています');
+
+    // Safety limit: 1GB
+    if (file.size > 1024 * 1024 * 1024) {
+      showToast('⚠️ ファイルサイズが大きすぎます (上限: 1GB)');
       return;
     }
+
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|flv)$/i.test(file.name);
+    const isLarge = file.size > 25 * 1024 * 1024;
+    const needsCompression = isVideo || isLarge;
+
     selectedFile = file;
     fileName.textContent = file.name;
     fileSize.textContent = formatFileSize(file.size);
+
+    if (needsCompression) {
+      fileBadge.style.display = 'inline-block';
+      fileBadge.textContent = isVideo ? '🎬 動画・自動圧縮' : '⚡ 大容量・自動圧縮';
+      fileActionHint.style.display = 'block';
+      fileActionHint.textContent = isVideo
+        ? '💡 動画から音声を抽出・軽量化（64kbps MP3）して文字起こしします'
+        : '💡 25MB以下に高圧縮（64kbps MP3）して文字起こしします';
+    } else {
+      fileBadge.style.display = 'none';
+      fileActionHint.style.display = 'none';
+    }
+
+    // Reset previous compression state
+    compressedAudioRow.style.display = 'none';
+    lastCompressedBlob = null;
+    lastCompressedFileName = '';
+
     dropZone.style.display = 'none';
     fileInfo.style.display = 'flex';
     updateTranscribeBtn();
@@ -156,6 +201,11 @@
     fileInput.value = '';
     dropZone.style.display = '';
     fileInfo.style.display = 'none';
+    fileBadge.style.display = 'none';
+    fileActionHint.style.display = 'none';
+    compressedAudioRow.style.display = 'none';
+    lastCompressedBlob = null;
+    lastCompressedFileName = '';
     updateTranscribeBtn();
   }
 
@@ -169,6 +219,119 @@
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  // ========================================
+  // Audio Extraction & MP3 Compression
+  // ========================================
+  async function extractAndCompressAudio(file, onProgress) {
+    onProgress({ percent: 5, text: '📂 ファイルを読み込み中...' });
+    const arrayBuffer = await file.arrayBuffer();
+
+    onProgress({ percent: 15, text: '🎬 音声を抽出・デコード中...' });
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      throw new Error('お使いのブラウザはWeb Audio APIに対応していません。');
+    }
+    const audioCtx = new AudioContextClass();
+
+    let audioBuffer;
+    try {
+      // Decode audio data (supporting both Promise and callback styles)
+      audioBuffer = await new Promise((resolve, reject) => {
+        const res = audioCtx.decodeAudioData(arrayBuffer, resolve, reject);
+        if (res && typeof res.then === 'function') {
+          res.then(resolve).catch(reject);
+        }
+      });
+    } catch (err) {
+      throw new Error('音声データの抽出に失敗しました（対応していない動画/音声コーデックの可能性があります）。');
+    } finally {
+      if (audioCtx.close) {
+        audioCtx.close().catch(() => {});
+      }
+    }
+
+    const duration = audioBuffer.duration;
+    onProgress({ percent: 35, text: `🔄 音声を最適化中 (16kHz モノラル / ${formatTime(duration)})...` });
+
+    // Resample to 16kHz mono via OfflineAudioContext (Whisper standard)
+    const targetSampleRate = 16000;
+    const targetLength = Math.ceil(duration * targetSampleRate);
+    const OfflineCtxClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const offlineCtx = new OfflineCtxClass(1, targetLength, targetSampleRate);
+
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+
+    const resampledBuffer = await offlineCtx.startRendering();
+    const pcmData = resampledBuffer.getChannelData(0); // Float32Array (-1.0 to 1.0)
+
+    // Convert Float32Array to Int16Array for MP3 encoder
+    const samples = new Int16Array(pcmData.length);
+    for (let i = 0; i < pcmData.length; i++) {
+      const s = Math.max(-1, Math.min(1, pcmData[i]));
+      samples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+
+    // Encode to MP3 with lamejs (mono, 16000Hz, 64kbps)
+    if (typeof lamejs === 'undefined' || !lamejs.Mp3Encoder) {
+      throw new Error('MP3エンコーダー（lamejs）が読み込まれていません。');
+    }
+
+    const mp3encoder = new lamejs.Mp3Encoder(1, targetSampleRate, 64);
+    const sampleBlockSize = 11520; // Chunk size
+    const mp3Data = [];
+    const totalSamples = samples.length;
+
+    for (let i = 0; i < totalSamples; i += sampleBlockSize) {
+      const chunk = samples.subarray(i, i + sampleBlockSize);
+      const mp3buf = mp3encoder.encodeBuffer(chunk);
+      if (mp3buf.length > 0) {
+        mp3Data.push(mp3buf);
+      }
+
+      // Update progress smoothly (allocated range: 40% ~ 85%)
+      if (i % (sampleBlockSize * 4) === 0 || i + sampleBlockSize >= totalSamples) {
+        const pct = Math.min(85, Math.round(40 + (i / totalSamples) * 45));
+        const currentSec = Math.round(i / targetSampleRate);
+        onProgress({
+          percent: pct,
+          text: `⚡ MP3に圧縮中... ${pct}% (${formatTime(currentSec)} / ${formatTime(duration)})`
+        });
+        await new Promise(r => setTimeout(r, 0)); // Yield to event loop
+      }
+    }
+
+    const finalMp3buf = mp3encoder.flush();
+    if (finalMp3buf.length > 0) {
+      mp3Data.push(finalMp3buf);
+    }
+
+    const mp3Blob = new Blob(mp3Data, { type: 'audio/mp3' });
+    const baseName = file.name.replace(/\.[^/.]+$/, "");
+    const compressedFileName = `${baseName}_audio.mp3`;
+    const compressedFile = new File([mp3Blob], compressedFileName, { type: 'audio/mp3' });
+
+    onProgress({
+      percent: 88,
+      text: `✅ 音声抽出・圧縮完了 (${formatFileSize(compressedFile.size)})`
+    });
+
+    return {
+      file: compressedFile,
+      blob: mp3Blob,
+      fileName: compressedFileName,
+      duration: duration
+    };
   }
 
   // ========================================
@@ -188,18 +351,49 @@
     isTranscribing = true;
     updateTranscribeBtn();
 
-    // Show progress
     const btnText = transcribeBtn.querySelector('.transcribe-btn-text');
     const btnSpinner = transcribeBtn.querySelector('.transcribe-spinner');
     btnText.textContent = '処理中...';
     btnSpinner.style.display = 'block';
     uploadProgress.style.display = 'flex';
-    progressFill.classList.add('indeterminate');
-    progressText.textContent = 'Groq APIに送信中...';
+    progressFill.classList.remove('indeterminate');
+    progressFill.style.width = '0%';
+    progressText.textContent = '準備中...';
+
+    const isVideo = selectedFile.type.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|flv)$/i.test(selectedFile.name);
+    const isLarge = selectedFile.size > 25 * 1024 * 1024;
+    const needsCompression = isVideo || isLarge;
+
+    let fileToSend = selectedFile;
 
     try {
+      // Step 1: Extract and compress audio if video or > 25MB
+      if (needsCompression) {
+        const result = await extractAndCompressAudio(selectedFile, function (progress) {
+          progressFill.style.width = progress.percent + '%';
+          progressText.textContent = progress.text;
+        });
+
+        fileToSend = result.file;
+        lastCompressedBlob = result.blob;
+        lastCompressedFileName = result.fileName;
+
+        // Show compressed download row
+        compressedInfo.textContent = `🎵 抽出完了: ${formatFileSize(result.file.size)} (${formatTime(result.duration)})`;
+        compressedAudioRow.style.display = 'flex';
+      }
+
+      // Step 2: Validate size before sending to Whisper (Groq limit: 25MB)
+      if (fileToSend.size > 25 * 1024 * 1024) {
+        throw new Error(`圧縮後も25MBを超えています (${formatFileSize(fileToSend.size)})。動画の長さを短くしてください。`);
+      }
+
+      // Step 3: Send to Groq Whisper API
+      progressFill.classList.add('indeterminate');
+      progressText.textContent = `🚀 Groq Whisper AIに送信中 (${formatFileSize(fileToSend.size)})...`;
+
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      formData.append('file', fileToSend);
       formData.append('model', 'whisper-large-v3-turbo');
       formData.append('language', whisperLangSelect.value);
       formData.append('response_format', 'text');
@@ -231,11 +425,11 @@
 
       progressFill.classList.remove('indeterminate');
       progressFill.style.width = '100%';
-      progressText.textContent = '✅ 完了しました';
+      progressText.textContent = '✅ 文字起こしが完了しました';
       showToast('✅ 文字起こしが完了しました');
 
     } catch (error) {
-      console.error('Whisper API error:', error);
+      console.error('Transcription error:', error);
       progressFill.classList.remove('indeterminate');
       progressFill.style.width = '0%';
       progressText.textContent = '❌ エラー: ' + error.message;
@@ -246,11 +440,13 @@
       btnSpinner.style.display = 'none';
       updateTranscribeBtn();
 
-      // Hide progress after delay
+      // Hide progress after delay if completed
       setTimeout(function () {
-        uploadProgress.style.display = 'none';
-        progressFill.style.width = '0%';
-      }, 4000);
+        if (!isTranscribing) {
+          uploadProgress.style.display = 'none';
+          progressFill.style.width = '0%';
+        }
+      }, 5000);
     }
   }
 

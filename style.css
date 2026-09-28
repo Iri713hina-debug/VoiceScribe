@@ -766,18 +766,85 @@ body::before {
 .file-info-details {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+
+.file-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .file-name {
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--text-primary);
+  word-break: break-all;
+}
+
+.file-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  border-radius: var(--radius-full);
 }
 
 .file-size {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.file-action-hint {
+  font-size: 0.75rem;
+  color: var(--accent-primary-hover);
+  margin-top: 2px;
+}
+
+/* Compressed Audio Row */
+.compressed-audio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-md);
+  animation: fadeIn 0.3s ease;
+}
+
+.compressed-info {
+  font-size: 0.8rem;
+  color: #34d399;
+  font-weight: 500;
+}
+
+.small-btn {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast);
+}
+
+.small-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary-hover);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Transcribe Button */
